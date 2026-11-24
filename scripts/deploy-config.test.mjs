@@ -136,3 +136,26 @@ test("database preflight rejects non-PostgreSQL URLs", () => {
     assert.equal(result.status, 1);
     assert.match(result.stdout, /valid postgresql/);
 });
+
+// Coolify runs Compose from an artifacts directory, not the repository. A
+// relative bind mount like ./scripts/x.mjs therefore resolves to a missing
+// path, Docker creates an empty directory, and the one-shot init container
+// exits 1 before the database ever starts. Keep the bootstrap script baked
+// into an image instead.
+for (const file of ["compose.yaml", "compose.coolify.yaml"]) {
+    test(`${file} bakes the bootstrap script instead of bind-mounting it`, () => {
+        const text = fs.readFileSync(path.join(import.meta.dirname, "..", file), "utf8");
+        // Only inspect volume entries; comments legitimately mention ./scripts.
+        const binds = text.split(/\r?\n/).filter((line) => /^\s*-\s*\.\//.test(line));
+        assert.deepEqual(binds, [], `${file} must not use host-relative bind mounts: ${binds.join(", ")}`);
+        assert.match(text, /dockerfile:\s*Dockerfile\.init/, `${file} must build postgres-init from Dockerfile.init`);
+        assert.match(text, /DB_INIT_DIR:\s*\/db-init/, `${file} must pass DB_INIT_DIR`);
+    });
+}
+
+test("Dockerfile.init copies the bootstrap script and runs it", () => {
+    const text = fs.readFileSync(path.join(import.meta.dirname, "..", "Dockerfile.init"), "utf8");
+    assert.match(text, /COPY scripts\/postgres-url-init\.mjs/);
+    assert.match(text, /ENTRYPOINT \["node", "\/app\/postgres-url-init\.mjs"\]/);
+});
+

@@ -10,15 +10,15 @@
 
 services:
   postgres-init:
-    image: node:24-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.init
     restart: "no"
     environment:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       DB_INIT_DIR: /db-init
     volumes:
-      - ./scripts/postgres-url-init.mjs:/app/postgres-url-init.mjs:ro
       - postgres-init:/db-init
-    command: ["node", "/app/postgres-url-init.mjs"]
 
   postgres:
     image: postgres:16-alpine

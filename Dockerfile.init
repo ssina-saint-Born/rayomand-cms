@@ -1,0 +1,7 @@
+# Tiny image for the one-shot database bootstrap service. Baking the script
+# into an image avoids a host bind mount: Coolify runs Compose from an
+# artifacts directory where repository-relative paths may not exist, and a
+# missing bind source becomes an empty directory (the container then exits 1).
+FROM node:24-alpine
+COPY scripts/postgres-url-init.mjs /app/postgres-url-init.mjs
+ENTRYPOINT ["node", "/app/postgres-url-init.mjs"]
