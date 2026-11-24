@@ -3,6 +3,7 @@ node_modules
 out
 data
 public/uploads
+public/downloads
 public/frontends
 *.log
 *.tsbuildinfo

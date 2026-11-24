@@ -43,7 +43,7 @@ Use the following brief when handing this document to an AI:
 - Store content comes from `products` and the storefront API. Products are not records in the `posts` table.
 - Never hard-code database IDs, product inventories, customer records, testimonials, orders or download URLs as live data.
 - A database with no records is valid. Render intentional empty states rather than sample content.
-- Visitors must never receive `DATABASE_URL`, `POSTGRES_PASSWORD`, `SETUP_TOKEN`, SMTP credentials or session tokens through JavaScript, HTML, public configuration or analytics.
+- Visitors must never receive `DATABASE_URL`, `SETUP_TOKEN`, `MAIL_SESSION_SECRET`, SMTP credentials or session tokens through JavaScript, HTML, public configuration or analytics.
 - Use the current native URL prefixes. No old URL aliases are implemented.
 - Preserve English API enum values and exact JSON property names, even in Persian mode.
 - Do not translate author-created titles, descriptions, names, menu labels, addresses, filenames or other stored content automatically.
@@ -246,7 +246,7 @@ Login does not currently promise merging an anonymous cart with a user-specific 
 | `POST /api/auth/logout` | No required body | `{loggedOut: true}` | Removes current session and clears its cookie |
 | `POST /api/auth/register` | `{username, email, password}` | `{id, username}`, 201 | Requires `users_can_register`; password at least 12 characters; only subscriber/customer role, never trust a submitted role |
 | `GET /api/auth/setup` | No body | `{required: boolean}` | Whether zero users exist |
-| `POST /api/auth/setup` | `{setup_token, username, email, password, site_title?}` | `{id, username}`, 201 | Bootstrap only; requires private server `SETUP_TOKEN`; first administrator creation protected by transaction/advisory lock |
+| `POST /api/auth/setup` | `{setup_token, username, email, password, site_title?}` | `{id, username}`, 201 | Bootstrap only; requires the private server `SETUP_TOKEN`; first administrator creation protected by transaction/advisory lock |
 
 First-owner setup is not a feature to embed in a public theme's configuration. Do not distribute the setup token. Once users exist, setup cannot create another owner.
 
@@ -1870,7 +1870,7 @@ Public media URLs such as `/uploads/...` need the same-origin gateway route. Do 
 - Next.js 14.2.15, React 18.3.1, TypeScript 5.4.5.
 - Tailwind CSS 3.4.10.
 - Node.js: use the project's supported modern runtime, at least 24.15 as stated by its launcher; verify build/test compatibility rather than downgrading existing runtime without need.
-- PostgreSQL 17 through the existing local Docker setup.
+- PostgreSQL provided locally by the bundled Docker stack (`compose.yaml`), or any reachable PostgreSQL 14+ server addressed by `DATABASE_URL`.
 - `pg`, Nodemailer and local Vazirmatn font dependency.
 - Scripts: `dev`, `build`, `start`, `db:setup`, `test:woo`.
 
@@ -1878,7 +1878,7 @@ From the application root:
 
 ```bash
 npm ci
-npm run db:setup
+npm run db:setup      # writes/validates the single DATABASE_URL and checks reachability
 npm run dev -- -p 3005
 ```
 
@@ -1895,28 +1895,38 @@ These are operator commands, not instructions to execute against an unrelated or
 
 ### 18.2 Environment variables
 
-The existing `.env.example` declares:
+There is exactly one user-facing database setting. The existing `.env.example` declares:
 
 ```text
-POSTGRES_DB
-POSTGRES_USER
-POSTGRES_PASSWORD
-POSTGRES_PORT
 DATABASE_URL
 SETUP_TOKEN
-SMTP_HOST
-SMTP_PORT
-SMTP_SECURE
-SMTP_USER
-SMTP_PASSWORD
-SMTP_FROM
+MAIL_SESSION_SECRET
+WEB_PORT
 ```
 
-Local setup defaults include database/user names `noma` and port 55432, but credentials are private generated/configured values. Do not infer production credentials from those names or copy secrets into this document.
+Optional advanced settings also present in `.env.example`:
 
-- `DATABASE_URL` is server-only and must target the intended database.
-- `SETUP_TOKEN` is first-owner setup authorization and must stay private.
-- SMTP variables must configure a real sender if email workflows are enabled.
+```text
+MAIL_SECRET_KEY
+MAIL_DATA_DIR
+MAIL_SMTP_PORT
+MAIL_SUBMISSION_PORT
+MAIL_SMTPS_PORT
+MAIL_IMAP_PORT
+MAIL_IMAPS_PORT
+MAIL_POP3_PORT
+MAIL_POP3S_PORT
+```
+
+`DATABASE_URL` is written in uppercase and must use the form `postgresql://USER:PASSWORD@HOST:PORT/DATABASE`. The former split `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_PORT` variables are legacy: `install.sh`, `scripts/configure-docker.sh` and `setup-database.mjs` convert them into `DATABASE_URL` and remove them. Do not ask an operator to set the split values, and do not add new ones.
+
+- `DATABASE_URL` is server-only, is sensitive because it contains the database password, and must target the intended database. Inside the bundled Docker stack its host is the Compose service name `postgres`; the official postgres `*_FILE` variables that consume it are internal implementation detail.
+- `SETUP_TOKEN` is a one-time bootstrap secret checked only by `POST /api/auth/setup` while no CMS user exists. It is not a login token, database password, mobile bearer token or GitHub PAT, and it grants nothing after the first owner is created. Compose still requires it to be a non-empty private random value.
+- `MAIL_SESSION_SECRET` signs webmail session cookies and is the primary key for encrypted at-rest mail settings. It is permanent: keep it private and unchanged, since rotating it invalidates webmail sessions and can make stored mail secrets unreadable unless they are re-entered.
+- `MAIL_SECRET_KEY` is an optional advanced override for at-rest mail encryption only; normally leave it unset so `MAIL_SESSION_SECRET` is used.
+- Do not reuse any of these values for another purpose.
+- Local development defaults may use different database/user names and ports, but credentials are private generated/configured values. Do not infer production credentials from those names or copy secrets into this document.
+- Outbound mail configuration lives in Studio → Mail (SMTP/mailbox settings), not in a frontend variable. To enable email workflows, a real sender/mailbox must be configured there.
 - No `NEXT_PUBLIC_DATABASE_URL` or frontend database password is valid.
 - A separate frontend might introduce a server-only CMS upstream origin setting; that is a new frontend deployment setting, not an existing secret automatically read by the CMS.
 
@@ -2036,6 +2046,6 @@ Paths below are relative to the application root. These files are the source of 
 | Store UI and context | `components/woo/StoreContext.tsx`, `ProductDetail.tsx`, `ShopBrowser.tsx`, `CheckoutPage.tsx`, `FreeDownloadButton.tsx`, `DownloadReadyPage.tsx` in the same folder |
 | Product attribute write format | `components/woo/admin/ShopProductEditor.tsx` |
 | Full API implementations | `app/api/content`, `app/api/storefront`, `app/api/commerce`, `app/api/downloads` |
-| Local deployment/testing | `compose.yaml`, `.env.example`, `setup-database.mjs`, `start-local.cmd`, `woo-smoke.mjs`, `browser-smoke.mjs` |
+| Local deployment/testing | `compose.yaml`, `compose.coolify.yaml` (Coolify, no host web/mail ports), `compose.external-db.yaml` (existing PostgreSQL), `.env.example`, `scripts/configure-docker.sh`, `scripts/provision-postgres.sh`, `setup-database.mjs`, `start-local.cmd`, `woo-smoke.mjs`, `browser-smoke.mjs` |
 
 **Definition of a compatible frontend:** a new presentation that reads the CMS's real published data, respects its exact identities and authorization flows, preserves administration and transactional behavior, and explicitly implements or reports any missing adapter/security capability. It is not a visual mockup pretending to be connected, nor an undocumented Rayomand Core theme replacement.

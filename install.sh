@@ -6,17 +6,17 @@
 #   ./install.sh --uninstall     stop the service and remove the systemd unit
 #
 # What it does:
-#   1. Preflight: Node, PostgreSQL, free ports, write access, outbound port 25
-#   2. Creates .env with a random database password and setup token
+#   1. Preflight: Node, database URL, free ports, write access, outbound port 25
+#   2. Normalizes .env around one DATABASE_URL plus independent setup/mail secrets
 #   3. Installs dependencies and builds the app
-#   4. Creates the database and runs migrations (first request applies schema)
+#   4. Checks the database; migrations run on first request
 #   5. Writes a systemd unit that runs `npm start` (web + mail under one parent)
 #
-# It never starts a container and never downloads a database image: PostgreSQL
-# must already be installed. This keeps the install inspectable and portable.
+# Use scripts/provision-postgres.sh first if the server needs PostgreSQL too.
 
 set -uo pipefail
 cd "$(dirname "$0")"
+source scripts/env-file.sh
 
 YES=0
 UNINSTALL=0
@@ -42,15 +42,29 @@ ask() { # ask <prompt> <default> -> echoes value
 
 SERVICE_NAME="rayomand"
 APP_DIR="$(pwd)"
+RUN_USER="${SUDO_USER:-$(id -un)}"
+RUN_GROUP="$(id -gn "$RUN_USER" 2>/dev/null || id -gn)"
+
+# The README recommends `sudo ./install.sh`, but some minimal hosts have no
+# sudo at all. When already root, run privileged commands directly.
+SUDO=()
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        SUDO=(sudo)
+    else
+        err "Run as root or install sudo."
+        exit 1
+    fi
+fi
 
 # ── Uninstall ───────────────────────────────────────────────────────────────
 if [ "$UNINSTALL" = 1 ]; then
     step "Removing service"
     if command -v systemctl >/dev/null 2>&1; then
-        sudo systemctl stop "$SERVICE_NAME" 2>/dev/null && ok "stopped" || warn "service was not running"
-        sudo systemctl disable "$SERVICE_NAME" 2>/dev/null
-        sudo rm -f "/etc/systemd/system/$SERVICE_NAME.service" && ok "unit removed"
-        sudo systemctl daemon-reload
+        "${SUDO[@]}" systemctl stop "$SERVICE_NAME" 2>/dev/null && ok "stopped" || warn "service was not running"
+        "${SUDO[@]}" systemctl disable "$SERVICE_NAME" 2>/dev/null
+        "${SUDO[@]}" rm -f "/etc/systemd/system/$SERVICE_NAME.service" && ok "unit removed"
+        "${SUDO[@]}" systemctl daemon-reload
     else
         warn "systemctl not found; nothing to remove"
     fi
@@ -97,9 +111,12 @@ check_port() {
     fi
     return 0
 }
-WEB_PORT=$(ask "Web port" "3131")
+WEB_PORT=$(ask "Web port" "${WEB_PORT:-3131}")
+case "$WEB_PORT" in *[!0-9]*) err "Web port must be a number from 1 to 65535."; exit 1 ;; esac
+WEB_PORT=$((10#$WEB_PORT))
+if [ "$WEB_PORT" -lt 1 ] || [ "$WEB_PORT" -gt 65535 ]; then err "Web port must be a number from 1 to 65535."; exit 1; fi
 check_port "$WEB_PORT" "web" && ok "Port $WEB_PORT is free"
-check_port 25 "SMTP inbound" || warn "Port 25 needs to be free for inbound mail; stop any existing MTA (postfix, exim)."
+check_port 25 "SMTP inbound" || warn "Port 25 is already owned by another service. The site will still run; inbound mail stays with the existing server unless you intentionally move it."
 
 echo
 echo "${DIM}Checking outbound port 25 (needed to deliver mail to Gmail/Outlook)…${RESET}"
@@ -117,39 +134,55 @@ fi
 # ── 2. Environment ──────────────────────────────────────────────────────────
 step "2/6  Creating configuration"
 
-if [ -f .env ]; then
-    warn ".env already exists; keeping it. Delete it first to reconfigure from scratch."
-else
-    DB_NAME=$(ask "Database name" "noma")
-    DB_USER=$(ask "Database user" "noma")
-    DB_PORT=$(ask "Database port" "5432")
-    DB_HOST=$(ask "Database host" "127.0.0.1")
-    DB_PASS=$(node -e "console.log(require('crypto').randomBytes(24).toString('hex'))")
-    SETUP_TOKEN=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-    MAIL_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-    cat > .env <<EOF
-POSTGRES_DB=$DB_NAME
-POSTGRES_USER=$DB_USER
-POSTGRES_PASSWORD=$DB_PASS
-POSTGRES_PORT=$DB_PORT
-DATABASE_URL=postgresql://$DB_USER:$DB_PASS@$DB_HOST:$DB_PORT/$DB_NAME
-SETUP_TOKEN=$SETUP_TOKEN
-MAIL_SESSION_SECRET=$MAIL_SECRET
-MAIL_SMTP_PORT=25
-MAIL_SUBMISSION_PORT=587
-MAIL_SMTPS_PORT=465
-MAIL_IMAP_PORT=143
-MAIL_IMAPS_PORT=993
-MAIL_POP3_PORT=110
-MAIL_POP3S_PORT=995
-EOF
-    chmod 600 .env
-    ok ".env created (mode 600)"
-    echo
-    echo "${BOLD}Your setup token (keep it private):${RESET}"
-    echo "  $SETUP_TOKEN"
-    echo "${DIM}You will paste this on the first-run screen to create the owner account.${RESET}"
+database_url="${DATABASE_URL:-}"
+if [ -z "$database_url" ]; then
+    database_url=$(env_get DATABASE_URL .env)
 fi
+case "$database_url" in *replace-with-a-long-random-password*) database_url="" ;; esac
+if [ -z "$database_url" ]; then
+    database_url=$(legacy_database_url .env)
+fi
+if [ -z "$database_url" ]; then
+    database_url=$(ask "PostgreSQL DATABASE_URL" "")
+fi
+if [ -z "$database_url" ]; then
+    err "DATABASE_URL is required."
+    echo "  With sudo/root: ./scripts/provision-postgres.sh   (installs PostgreSQL and writes DATABASE_URL)"
+    echo "  Or export DATABASE_URL=postgresql://user:password@host:5432/database"
+    exit 1
+fi
+
+node -e '
+const value = process.argv[1];
+let parsed;
+try { parsed = new URL(value); } catch { console.error("DATABASE_URL is not a valid URL."); process.exit(1); }
+if (!["postgres:", "postgresql:"].includes(parsed.protocol) || !parsed.hostname) {
+  console.error("DATABASE_URL must use postgresql:// or postgres:// and include a host.");
+  process.exit(1);
+}
+' "$database_url" || exit 1
+
+setup_token=$(env_get SETUP_TOKEN .env)
+mail_secret=$(env_get MAIL_SESSION_SECRET .env)
+[ -n "$setup_token" ] || setup_token=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+[ -n "$mail_secret" ] || mail_secret=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+
+if ! env_write .env \
+    "DATABASE_URL=$database_url" \
+    "SETUP_TOKEN=$setup_token" \
+    "MAIL_SESSION_SECRET=$mail_secret" \
+    "WEB_PORT=$WEB_PORT"; then
+    err "Could not write .env"
+    exit 1
+fi
+if [ "$(id -u)" -eq 0 ] && [ "$RUN_USER" != "root" ]; then
+    chown "$RUN_USER:$RUN_GROUP" .env
+fi
+ok ".env ready: one DATABASE_URL, setup and webmail secrets, mode 600"
+echo
+echo "${BOLD}Your setup token (keep it private):${RESET}"
+echo "  $setup_token"
+echo "${DIM}It only creates the first owner; it is not a login token or a database password.${RESET}"
 
 # ── 3. Dependencies + build ─────────────────────────────────────────────────
 step "3/6  Installing dependencies"
@@ -182,7 +215,13 @@ if ! command -v systemctl >/dev/null 2>&1; then
 fi
 
 RUN_USER="${SUDO_USER:-$(id -un)}"
+RUN_GROUP="$(id -gn "$RUN_USER" 2>/dev/null || id -gn)"
 NODE_BIN="$(command -v node)"
+if [ "$(id -u)" -eq 0 ] && [ "$RUN_USER" != "root" ]; then
+    mkdir -p data/mail data/logs public/uploads public/downloads public/frontends .next/cache
+    chown "$RUN_USER:$RUN_GROUP" .env
+    chown -R "$RUN_USER:$RUN_GROUP" data public/uploads public/downloads public/frontends .next/cache
+fi
 # tsx is a JS CLI; invoke it through node so the unit does not depend on a
 # shebang or a PATH that includes node_modules/.bin.
 TSX_CLI="$APP_DIR/node_modules/tsx/dist/cli.mjs"
@@ -192,7 +231,7 @@ if [ ! -f "$TSX_CLI" ]; then
 else
     EXEC_START="$NODE_BIN $TSX_CLI scripts/serve.ts"
 fi
-sudo tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null <<EOF
+"${SUDO[@]}" tee "/etc/systemd/system/$SERVICE_NAME.service" >/dev/null <<EOF
 [Unit]
 Description=Rayomand CMS (web + mail engine)
 After=network.target postgresql.service
@@ -221,9 +260,9 @@ ReadWritePaths=$APP_DIR
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable "$SERVICE_NAME" >/dev/null 2>&1
-sudo systemctl restart "$SERVICE_NAME"
+"${SUDO[@]}" systemctl daemon-reload
+"${SUDO[@]}" systemctl enable "$SERVICE_NAME" >/dev/null 2>&1
+"${SUDO[@]}" systemctl restart "$SERVICE_NAME"
 sleep 2
 if systemctl is-active --quiet "$SERVICE_NAME"; then
     ok "Service running"

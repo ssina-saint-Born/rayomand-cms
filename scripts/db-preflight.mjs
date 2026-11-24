@@ -1,37 +1,45 @@
 import fs from "node:fs";
 import net from "node:net";
 
-// Non-fatal database reachability check used by install.sh. It does not need
-// psql: it parses DATABASE_URL and opens a TCP connection. Schema migrations
-// happen on the first HTTP request, so a down database here is a warning, not
-// a failure — the operator may start PostgreSQL after installing.
-
 function readDatabaseUrl() {
+    if (process.env.DATABASE_URL)
+        return process.env.DATABASE_URL.trim();
     try {
         const text = fs.readFileSync(".env", "utf8");
-        const line = text.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL="));
-        return line ? line.slice("DATABASE_URL=".length).trim() : process.env.DATABASE_URL || "";
+        const line = text.split(/\r?\n/).find((entry) => entry.startsWith("DATABASE_URL="));
+        if (!line)
+            return "";
+        let value = line.slice("DATABASE_URL=".length).trim();
+        if (value.length >= 2 && ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))))
+            value = value.slice(1, -1);
+        return value;
     }
     catch {
-        return process.env.DATABASE_URL || "";
+        return "";
     }
 }
 
-const url = readDatabaseUrl();
-if (!url) {
+const value = readDatabaseUrl();
+if (!value) {
     console.log("DATABASE_URL is not set.");
     process.exit(1);
 }
 
-let host = "127.0.0.1";
-let port = 5432;
+let host;
+let port;
 try {
-    const parsed = new URL(url);
-    host = parsed.hostname || host;
+    const parsed = new URL(value);
+    if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:")
+        throw new Error("unsupported protocol");
+    if (!parsed.hostname)
+        throw new Error("missing host");
+    host = parsed.hostname.replace(/^\[|\]$/g, "");
     port = Number(parsed.port || 5432);
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+        throw new Error("invalid port");
 }
 catch {
-    console.log("DATABASE_URL is not a valid postgresql:// URL.");
+    console.log("DATABASE_URL must be a valid postgresql:// URL with a host and port.");
     process.exit(1);
 }
 

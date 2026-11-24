@@ -27,11 +27,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rayomand.mobile.shared.ProjectInfo
 
-// In-app deploy helper: collects a few values, builds the exact one-line command
-// that clones the CMS from the official repository and runs the installer, and
-// lets the user copy it to their server. The app does not open SSH itself; it
-// produces a command the operator pastes into their own terminal, so no server
-// credentials ever pass through the phone.
+// In-app deploy helper: collects a few values, builds the exact multi-step
+// command that clones the CMS from the official repository and runs the
+// installer, and lets the user copy it to their server. The app does not open
+// SSH itself; it produces a command the operator pastes into their own
+// terminal, so no server credentials ever pass through the phone.
 
 private enum class InstallMethod(val label: String) {
     Docker("Docker"),
@@ -49,6 +49,7 @@ fun InstallScreen(onBack: () -> Unit) {
     var installDir by remember { mutableStateOf("/opt/rayomand") }
     var webPort by remember { mutableStateOf("3131") }
     var copied by remember { mutableStateOf(false) }
+    val portValid = ProjectInfo.isValidPort(webPort)
 
     val command = when (method) {
         InstallMethod.Docker -> ProjectInfo.dockerCommand(installDir, webPort, sshUser, host)
@@ -118,9 +119,11 @@ fun InstallScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
-                value = webPort, onValueChange = { p -> webPort = p.filter { it.isDigit() }; copied = false },
+                value = webPort, onValueChange = { p -> webPort = p.filter { it.isDigit() }.take(5); copied = false },
                 label = { Text("Web port") },
                 singleLine = true,
+                isError = webPort.isNotEmpty() && !portValid,
+                supportingText = { if (webPort.isNotEmpty() && !portValid) Text("Use a port from 1 to 65535.") },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             )
@@ -128,8 +131,8 @@ fun InstallScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(
                 when (method) {
-                    InstallMethod.Docker -> "Runs PostgreSQL + the app in two containers. No external mail relay."
-                    InstallMethod.BareMetal -> "Installs Node build + a systemd service. Needs Node 18+ and PostgreSQL 14+ already on the server."
+                    InstallMethod.Docker -> "Runs PostgreSQL and the app together. DATABASE_URL is generated automatically; the stack publishes the web port and the built-in mail ports."
+                    InstallMethod.BareMetal -> "Installs PostgreSQL 14+ when missing, creates the database, writes DATABASE_URL, builds, and installs a systemd service. Node 18+ is required."
                 },
                 fontSize = 12.sp, color = Color.Gray,
             )
@@ -138,10 +141,13 @@ fun InstallScreen(onBack: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Command", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(command))
-                    copied = true
-                }) {
+                TextButton(
+                    enabled = portValid,
+                    onClick = {
+                        clipboard.setText(AnnotatedString(command))
+                        copied = true
+                    },
+                ) {
                     Icon(if (copied) Icons.Filled.Check else Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(if (copied) "Copied" else "Copy")
@@ -167,14 +173,11 @@ fun InstallScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(16.dp)) {
                     Text("After the command finishes", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Spacer(Modifier.height(6.dp))
-                    Step("1", "Open  http://<server>:${webPort.ifBlank { "3131" }}  in a browser.")
+                    Step("1", "Open  http://<server>:${if (portValid) webPort else "3131"}  in a browser.")
                     Step("2", "Paste the SETUP_TOKEN printed by the installer to create the owner account.")
                     Step("3", "Studio → Mail: add your domain so the CMS can send email.")
-                    if (method == InstallMethod.Docker) {
-                        Step("i", "Setup token:  sudo grep SETUP_TOKEN $installDir/.env")
-                    } else {
-                        Step("i", "Setup token:  sudo grep SETUP_TOKEN $installDir/.env")
-                    }
+                    Step("i", "SETUP_TOKEN works only until the first owner exists. MAIL_SESSION_SECRET is permanent; keep it private and unchanged.")
+                    Step("i", "Setup token:  sudo grep SETUP_TOKEN ${installDir.ifBlank { "/opt/rayomand" }}/.env")
                 }
             }
 

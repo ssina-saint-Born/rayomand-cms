@@ -7,6 +7,9 @@ node_modules
 !.env.example
 *.log
 pgdata
+data
+public/uploads
+public/downloads
 .data
 dist
 vendor/data

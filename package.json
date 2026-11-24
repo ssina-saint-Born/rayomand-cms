@@ -2,6 +2,9 @@
   "name": "rayomand-cms",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=18"
+  },
   "description": "Rayomand CMS bilingual publishing and commerce workspace with PostgreSQL and SMTP integration.",
   "scripts": {
     "dev": "next dev",
@@ -9,6 +12,7 @@
     "start": "tsx scripts/serve.ts",
     "serve": "tsx scripts/serve.ts",
     "db:setup": "node setup-database.mjs",
+    "test:deploy": "node --test scripts/deploy-config.test.mjs",
     "test:woo": "node woo-smoke.mjs",
     "test:seo": "node seo-smoke.mjs",
     "test:sms": "node sms-smoke.mjs",

@@ -13,7 +13,10 @@ const COOKIE = "rm_webmail";
 const TTL_HOURS = 12;
 
 function secret(): string {
-    return process.env.MAIL_SESSION_SECRET || process.env.SETUP_TOKEN || "rayomand-mail-session";
+    const value = process.env.MAIL_SESSION_SECRET || process.env.SETUP_TOKEN;
+    if (!value)
+        throw new Error("MAIL_SESSION_SECRET is required for webmail sessions.");
+    return value;
 }
 
 function sign(value: string): string {

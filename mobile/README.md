@@ -13,7 +13,52 @@ CMS on your server" builds the exact command that clones the official repository
 and runs the installer over SSH (Docker or bare metal). The repository URL lives
 in [`ProjectInfo.kt`](shared/src/commonMain/kotlin/com/rayomand/mobile/shared/ProjectInfo.kt).
 
-Prebuilt Android APKs are published on the repository's **Releases** page.
+Prebuilt Android APKs are published on the repository's **Releases** page when a
+build is produced; the installer changes described here are in source (`1.2.0`),
+so build the app from this tree if no matching artifact is available yet.
+
+---
+
+## Server-install helper (in-app, version 1.2.0)
+
+The Install screen collects a server address, SSH user, install directory
+(default `/opt/rayomand`) and web port, then produces a command you paste into
+your own terminal. The app never opens the SSH connection.
+
+Both command forms are idempotent — when the target directory already is a git
+checkout they run `git pull --ff-only` instead of cloning again.
+
+**Docker**
+
+```
+git clone https://github.com/ssina-saint-Born/rayomand-cms.git <dir>   # or git pull --ff-only
+cd <dir>
+sudo bash scripts/configure-docker.sh --web-port <port>
+sudo docker compose up -d --build
+```
+
+`configure-docker.sh` writes one `DATABASE_URL` and generates two independent
+secrets (`SETUP_TOKEN`, `MAIL_SESSION_SECRET`). The stack bundles PostgreSQL.
+
+**Bare metal**
+
+```
+git clone https://github.com/ssina-saint-Born/rayomand-cms.git <dir>   # or git pull --ff-only
+cd <dir>
+sudo bash scripts/provision-postgres.sh
+sudo env WEB_PORT=<port> bash ./install.sh --yes
+```
+
+`provision-postgres.sh` installs PostgreSQL 14+ from apt, dnf, yum or apk when
+no server is present, starts it, creates a dedicated `rayomand` role and
+database, and writes `DATABASE_URL` plus the two secrets into `.env`. Node 18+
+remains a prerequisite for the CMS itself.
+
+Inputs are shell-quoted, so directory names and hosts with spaces or quotes are
+safe. An invalid web port is rejected and falls back to 3131.
+
+The helper source is updated in this repository; the version is reported by
+`ProjectInfo.APP_VERSION`.
 
 ---
 
@@ -95,8 +140,8 @@ CMS data model.
 ## What is verified
 
 - **The Android APK was built and run on an emulator (Android 36).** Sign-in
-  against the live CMS succeeded, and all three tabs (Alerts, Content, Review)
-  rendered. A real order-status change on the server produced a live
+  against a running CMS instance succeeded, and all three tabs (Alerts, Content,
+  Review) rendered. A real order-status change on the server produced a live
   "Order #… → completed" alert in the app; tapping Read cleared it and the
   unread badge; the device auto-registered in the CMS.
 - Every `/api/mobile/*` endpoint was exercised directly as well: login →

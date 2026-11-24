@@ -1,0 +1,22 @@
+# Shell scripts and the Docker entrypoint helper must keep LF endings: CRLF
+# breaks `bash script.sh` on Linux with "bad interpreter" errors.
+*.sh            text eol=lf
+*.mjs           text eol=lf
+*.ts            text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+Dockerfile      text eol=lf
+
+# Windows-only helper keeps its native endings.
+*.cmd           text eol=crlf
+
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.webp          binary
+*.ico           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
+*.zip           binary
+*.apk           binary

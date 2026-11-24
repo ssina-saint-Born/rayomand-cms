@@ -1,58 +1,119 @@
-import fs from 'node:fs';
-import { randomBytes } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import fs from "node:fs";
+import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
 
-// Rayomand runs against a PostgreSQL server you already have. This script only
-// prepares the connection file and verifies the server is reachable; it never
-// pulls images or starts containers.
+const LEGACY_KEYS = new Set(["POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT"]);
+const MANAGED_KEYS = new Set(["DATABASE_URL", "SETUP_TOKEN", "MAIL_SESSION_SECRET", ...LEGACY_KEYS]);
 
-if (!fs.existsSync('.env')) {
-  const password = randomBytes(32).toString('hex');
-  const token = randomBytes(32).toString('hex');
-  const mailSecret = randomBytes(32).toString('hex');
-  fs.writeFileSync('.env', `POSTGRES_DB=noma\nPOSTGRES_USER=noma\nPOSTGRES_PASSWORD=${password}\nPOSTGRES_PORT=5432\nDATABASE_URL=postgresql://noma:${password}@127.0.0.1:5432/noma\nSETUP_TOKEN=${token}\nMAIL_SESSION_SECRET=${mailSecret}\nMAIL_SMTP_PORT=25\nMAIL_SUBMISSION_PORT=587\nMAIL_SMTPS_PORT=465\nMAIL_IMAP_PORT=143\nMAIL_IMAPS_PORT=993\nMAIL_POP3_PORT=110\nMAIL_POP3S_PORT=995\n`, { mode: 0o600, flag: 'wx' });
-  console.log('Created private .env. Edit DATABASE_URL if your PostgreSQL server uses different credentials.');
-  console.log('Use SETUP_TOKEN from that file to create your first owner in the app.');
+function parseEnv(text) {
+    const values = new Map();
+    for (const raw of text.split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || line.startsWith("#"))
+            continue;
+        const equal = line.indexOf("=");
+        if (equal < 1)
+            continue;
+        const key = line.slice(0, equal).trim();
+        let value = line.slice(equal + 1).trim();
+        if (value.length >= 2 && ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))))
+            value = value.slice(1, -1);
+        values.set(key, value);
+    }
+    return values;
 }
 
-const url = (() => {
-  try {
-    const text = fs.readFileSync('.env', 'utf8');
-    const line = text.split(/\r?\n/).find((l) => l.startsWith('DATABASE_URL='));
-    return line ? line.slice('DATABASE_URL='.length).trim() : '';
-  } catch {
-    return '';
-  }
-})();
-
-if (!url) {
-  console.error('DATABASE_URL is missing from .env. Set it to your PostgreSQL connection string.');
-  process.exit(1);
+function renderEnv(text, entries) {
+    const lines = text ? text.split(/\r?\n/) : [];
+    const kept = lines.filter((line) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#"))
+            return true;
+        const equal = trimmed.indexOf("=");
+        return equal < 1 || !MANAGED_KEYS.has(trimmed.slice(0, equal).trim());
+    });
+    while (kept.length && !kept[kept.length - 1].trim())
+        kept.pop();
+    if (kept.length)
+        kept.push("");
+    kept.push(...entries);
+    return kept.join("\n") + "\n";
 }
 
-let host = '127.0.0.1';
-let port = '5432';
+function legacyUrl(values) {
+    const password = values.get("POSTGRES_PASSWORD");
+    if (!password)
+        return "";
+    const user = values.get("POSTGRES_USER") || "noma";
+    const database = values.get("POSTGRES_DB") || "noma";
+    const port = values.get("POSTGRES_PORT") || "5432";
+    return `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@127.0.0.1:${encodeURIComponent(port)}/${encodeURIComponent(database)}`;
+}
+
+function validateDatabaseUrl(value) {
+    let url;
+    try {
+        url = new URL(value);
+    }
+    catch {
+        throw new Error("DATABASE_URL is not a valid URL.");
+    }
+    if (url.protocol !== "postgres:" && url.protocol !== "postgresql:")
+        throw new Error("DATABASE_URL must use postgresql:// or postgres://.");
+    if (!url.hostname)
+        throw new Error("DATABASE_URL must include a database host.");
+    const port = url.port ? Number(url.port) : 5432;
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+        throw new Error("DATABASE_URL has an invalid port.");
+    return url;
+}
+
+const existing = fs.existsSync(".env") ? fs.readFileSync(".env", "utf8") : "";
+const values = parseEnv(existing);
+const databaseUrl = process.env.DATABASE_URL || values.get("DATABASE_URL") || legacyUrl(values);
+if (!databaseUrl || databaseUrl.includes("replace-with-a-long-random-password")) {
+    console.error("DATABASE_URL is required. Set it in .env or the environment first.");
+    console.error("  Bare metal: ./scripts/provision-postgres.sh");
+    console.error("  Docker:     ./scripts/configure-docker.sh");
+    console.error("  External:   DATABASE_URL=postgresql://user:password@host:5432/database npm run db:setup");
+    process.exit(1);
+}
+const setupToken = process.env.SETUP_TOKEN || values.get("SETUP_TOKEN") || randomBytes(32).toString("hex");
+const mailSecret = process.env.MAIL_SESSION_SECRET || values.get("MAIL_SESSION_SECRET") || randomBytes(32).toString("hex");
+
+let parsed;
 try {
-  const parsed = new URL(url);
-  host = parsed.hostname || host;
-  port = parsed.port || port;
-} catch {
-  console.error('DATABASE_URL is not a valid postgresql:// URL.');
-  process.exit(1);
+    parsed = validateDatabaseUrl(databaseUrl);
+}
+catch (error) {
+    console.error(error.message);
+    process.exit(1);
 }
 
-// `pg_isready` ships with PostgreSQL client tools; it is the quickest native
-// reachability check. If it is not on PATH we simply report the target.
-const ready = spawnSync('pg_isready', ['-h', host, '-p', port], { stdio: 'pipe', shell: false, encoding: 'utf8' });
+const next = renderEnv(existing, [
+    `DATABASE_URL=${databaseUrl}`,
+    `SETUP_TOKEN=${setupToken}`,
+    `MAIL_SESSION_SECRET=${mailSecret}`,
+]);
+fs.writeFileSync(".env", next, { mode: 0o600 });
+try {
+    fs.chmodSync(".env", 0o600);
+}
+catch { }
+
+console.log(existing ? "Updated .env: one DATABASE_URL; legacy POSTGRES_* entries removed." : "Created private .env with one DATABASE_URL.");
+console.log(`PostgreSQL target: ${parsed.hostname}:${parsed.port || 5432}`);
+console.log("Use SETUP_TOKEN from .env to create the first owner. Schema migrations run automatically on first request.");
+
+const ready = spawnSync("pg_isready", ["-h", parsed.hostname, "-p", parsed.port || "5432"], { stdio: "pipe", shell: false, encoding: "utf8" });
 if (ready.error) {
-  console.log(`PostgreSQL target: ${host}:${port}`);
-  console.log('pg_isready was not found on PATH; start your PostgreSQL server, then run "npm run dev".');
-  process.exit(0);
+    console.log("pg_isready was not found on PATH; start PostgreSQL, then run \"npm run dev\".");
+    process.exit(0);
 }
 if (ready.status !== 0) {
-  console.error(`PostgreSQL is not accepting connections at ${host}:${port}.`);
-  console.error('Start the server (for example: pg_ctl start, or your system service), then retry.');
-  process.exit(ready.status ?? 1);
+    console.error(`PostgreSQL is not accepting connections at ${parsed.hostname}:${parsed.port || 5432}.`);
+    console.error("Start the server (for example: pg_ctl start, or your system service), then retry.");
+    process.exit(ready.status ?? 1);
 }
 
-console.log(`PostgreSQL is reachable at ${host}:${port}. Schema migrations run automatically on first request.`);
+console.log(`PostgreSQL is reachable at ${parsed.hostname}:${parsed.port || 5432}.`);
