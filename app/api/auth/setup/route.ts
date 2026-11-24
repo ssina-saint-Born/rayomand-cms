@@ -1,4 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { getDb, withTransaction } from "@/lib/db";
 import { countUsers, createUser } from "@/lib/users";
 import { hashPassword } from "@/lib/password";
@@ -9,35 +11,75 @@ import { ok, fail, readBody } from "@/lib/api";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() { return ok({ required: await countUsers() === 0 }); }
+// `build` lets an operator confirm which image is actually live; a fix that
+// "didn't work" is usually a stale container still serving the old bundle.
+function buildId(): string {
+  try {
+    return readFileSync(join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function GET() { return ok({ required: await countUsers() === 0, build: buildId(), guard: GUARD_VERSION }); }
 
 // CSRF guard for the bootstrap call. Only the hostname is compared, because
-// behind a TLS-terminating proxy (Coolify/Traefik, nginx) Next.js builds
-// req.url with `http://` while the browser sends `Origin: https://…`; comparing
-// full origins rejects every legitimate setup request. Hostname equality still
-// blocks cross-site posts, since an attacker page cannot claim our hostname.
-// Non-browser clients (curl, the Docker healthcheck) send no Origin and pass.
+// behind a TLS-terminating proxy (Coolify/Traefik, nginx) Next.js sees the
+// internal `http://…:3131` request while the browser sends
+// `Origin: https://cms.example.com`; comparing full origins rejects every
+// legitimate setup request.
+//
+// Proxies differ in what they forward: Traefik normally passes the public host
+// in `X-Forwarded-Host`, but some configurations rewrite `Host` to the
+// container address and drop that header, leaving nothing that matches
+// `Origin` and locking the operator out of a fresh install. Coolify always
+// injects the public hostname into the container as an environment variable
+// (`COOLIFY_FQDN`, `SERVICE_FQDN_<name>`, `SERVICE_URL_<name>`), so those are
+// accepted as well. A request that matches none of them is still a cross-site
+// post and is rejected. Non-browser clients (curl, the Docker healthcheck) send
+// no Origin and pass.
+const ENV_HOST_KEYS = /^(PUBLIC_ORIGIN|APP_URL|SITE_URL|COOLIFY_URL|COOLIFY_FQDN|SERVICE_FQDN_\w+|SERVICE_URL_\w+)$/;
+
+// Bump when this logic changes; GET reports it so a stale container (the usual
+// cause of "the fix didn't work") is distinguishable from an unfixed bug.
+const GUARD_VERSION = 2;
+
+function hostOf(value: string): string {
+  const text = value.trim();
+  if (!text)
+    return "";
+  try {
+    return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function candidateHosts(req: Request): string[] {
+  const values = [
+    (req.headers.get("x-forwarded-host") || "").split(",")[0],
+    req.headers.get("x-forwarded-server") || "",
+    req.headers.get("host") || "",
+    new URL(req.url).host,
+  ];
+  for (const [key, value] of Object.entries(process.env))
+    if (value && ENV_HOST_KEYS.test(key))
+      values.push(...value.split(","));
+  return values.map(hostOf).filter(Boolean);
+}
+
 function sameOrigin(req: Request): boolean {
   const origin = req.headers.get("origin");
   if (!origin)
     return true;
-  let originHost: string;
-  try {
-    originHost = new URL(origin).hostname.toLowerCase();
-  } catch {
+  const originHost = hostOf(origin);
+  if (!originHost)
     return false;
-  }
-  const forwardedHost = (req.headers.get("x-forwarded-host") || "").split(",")[0].trim();
-  const candidates = [forwardedHost, req.headers.get("host") || "", new URL(req.url).host]
-    .filter(Boolean)
-    .map((value) => {
-      try {
-        return new URL(`http://${value}`).hostname.toLowerCase();
-      } catch {
-        return "";
-      }
-    });
-  return candidates.includes(originHost);
+  const candidates = candidateHosts(req);
+  if (candidates.includes(originHost))
+    return true;
+  console.warn(`[setup] origin rejected: origin="${originHost}" host="${req.headers.get("host") || "-"}" candidates=${JSON.stringify(candidates)}`);
+  return false;
 }
 
 export async function POST(req: Request) {

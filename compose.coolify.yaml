@@ -29,6 +29,11 @@ services:
       # `postgres` service; takes precedence over DATABASE_URL at runtime.
       DATABASE_URL_FILE: /db-init/url
       SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in Coolify}
+      # Optional: the site's public address. The setup endpoint's same-origin
+      # check normally finds the host from Traefik's X-Forwarded-Host or from
+      # Coolify's own COOLIFY_FQDN/SERVICE_URL_* variables; set this only if
+      # owner creation still reports "Invalid origin".
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
       MAIL_SESSION_SECRET: ${MAIL_SESSION_SECRET:?set MAIL_SESSION_SECRET in Coolify}
       MAIL_DATA_DIR: /app/data/mail
       MAIL_SMTP_PORT: 25

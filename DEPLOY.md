@@ -197,6 +197,32 @@ server".
 4. For Cloudflare, keep SSL/TLS mode on **Full (strict)**. "Flexible" makes
    Cloudflare talk HTTP to port 443 and is a common cause of this error.
 
+### If owner creation says "Invalid origin"
+
+The setup endpoint rejects a bootstrap request whose `Origin` host does not
+match the request's own host; that check is what stops a cross-site post. Behind
+a proxy the host has to be rediscovered, because TLS terminates at Traefik and
+`Host` may be rewritten to the container address. The endpoint accepts the host
+from, in order: `X-Forwarded-Host`, `X-Forwarded-Server`, `Host`, the request
+URL, then `PUBLIC_ORIGIN`, `APP_URL`, `SITE_URL`, `COOLIFY_URL`,
+`COOLIFY_FQDN`, `SERVICE_FQDN_*` and `SERVICE_URL_*`.
+
+Coolify sets `COOLIFY_FQDN`/`SERVICE_URL_<service>` itself, so normally nothing
+needs to be configured. If the error persists, set `PUBLIC_ORIGIN` to the exact
+public address (scheme included, e.g. `https://cms.example.com`), redeploy, and
+retry. The server log names the rejected origin and the hosts it compared:
+
+```
+[setup] origin rejected: origin="cms.example.com" host="10.0.1.7:3131" candidates=[…]
+```
+
+An `X-Forwarded-Proto: http` while the browser is on `https` is harmless: the
+guard compares hostnames only, never schemes.
+
+To confirm which build a container is running, `GET /api/auth/setup` returns
+`{"required":…,"build":"…","guard":…}`. If `guard` is lower than the number in
+this repository, the container is stale and needs a redeploy.
+
 
 ### Automatic deploys
 

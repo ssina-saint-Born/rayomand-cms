@@ -13,6 +13,9 @@ services:
       PORT: 3131
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in .env}
+      # Public address of the site; used by the setup endpoint's same-origin
+      # check when the reverse proxy rewrites Host and drops X-Forwarded-Host.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
       MAIL_SESSION_SECRET: ${MAIL_SESSION_SECRET:?set MAIL_SESSION_SECRET in .env}
       MAIL_DATA_DIR: /app/data/mail
       MAIL_SMTP_PORT: 25

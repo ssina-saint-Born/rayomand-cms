@@ -202,12 +202,17 @@ test("serve.ts starts the port alias listener", () => {
 // Behind a TLS-terminating proxy Next.js sees http:// on req.url while the
 // browser sends Origin: https://…, so the setup endpoint must compare
 // hostnames, not full origins, or every first-owner creation returns 403
-// "Invalid origin".
-test("setup origin guard compares hostnames, not schemes", () => {
+// "Invalid origin". The check must stay a hard rejection (it is the CSRF
+// guard); what widens is the set of trustworthy host sources.
+test("setup origin guard compares hostnames and consults Coolify env vars", () => {
     const text = fs.readFileSync(path.join(import.meta.dirname, "..", "app", "api", "auth", "setup", "route.ts"), "utf8");
     assert.doesNotMatch(text, /new URL\(req\.url\)\.origin\s*\)/, "must not compare full origins");
     assert.match(text, /hostname/, "must compare hostnames");
     assert.match(text, /x-forwarded-host/, "must consider the proxy's forwarded host");
     assert.match(text, /if \(!origin\)\s*\n\s*return true;/, "non-browser clients without Origin must pass");
+    assert.match(text, /if \(!sameOrigin\(req\)\) return fail\("Invalid origin", 403\);/, "a mismatch must still be rejected");
+    assert.match(text, /COOLIFY_FQDN/, "must accept Coolify's injected public hostname");
+    assert.match(text, /SERVICE_URL_\\w\+/, "must accept the per-service public URL");
+    assert.match(text, /guard: GUARD_VERSION/, "GET must report the guard version");
 });
 
