@@ -1,0 +1,69 @@
+Rayomand CMS License v1.0
+========================
+
+Copyright (c) 2026 Rayomand Technology. All rights reserved.
+
+This license governs the Rayomand CMS software and its source code (the
+"Software"). It is a proprietary, source-available license. It is NOT an
+open-source license and it does NOT grant the freedoms that open-source
+licenses (MIT, GPL, Apache, BSD, etc.) grant.
+
+Read these terms carefully. By installing, running, copying, or otherwise using
+the Software, you agree to them. If you do not agree, do not use the Software.
+
+1. PERMITTED USE
+   You MAY install, run, and self-host the Software for your own personal,
+   internal, or organizational purposes. This includes using the running system
+   commercially (for example, operating a website, store, or service on it for
+   yourself or your clients).
+
+2. PRIVATE MODIFICATION
+   You MAY modify the source code for your own private, internal use, provided
+   the modified Software is not distributed, published, sub-licensed, or sold.
+
+3. PROHIBITED ACTIONS
+   You may NOT:
+   a. Copy, redistribute, publish, sub-license, or otherwise make the Software
+      or any substantial portion of it available to third parties, in source or
+      compiled form.
+   b. Sell, rent, lease, resell, or otherwise commercially exploit the Software
+      itself, or any derivative of it, as a stand-alone or embedded product.
+   c. Fork, clone, rebrand, or create derivative works of the Software and then
+      distribute, publish, or sell them — including under a different name or
+      with only minor modifications or additions.
+   d. Offer the Software, or a derivative of it, as a hosted or managed service
+      for third parties, or as part of a paid template/theme/product bundle.
+   e. Remove, obscure, or alter this license or any copyright or attribution
+      notices.
+
+4. THIRD-PARTY COMPONENTS
+   The Software depends on third-party open-source packages. Those packages
+   remain under their own licenses, and this license does not restrict your
+   rights under those licenses with respect to those packages alone.
+
+5. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+6. LIMITATION OF LIABILITY
+   IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT,
+   OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR
+   THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+7. TERMINATION
+   Any breach of these terms automatically terminates your rights under this
+   license. On termination you must stop using the Software and destroy all
+   copies in your possession or control.
+
+8. COMMERCIAL LICENSING AND PERMISSIONS
+   For any use not expressly permitted above — including redistribution,
+   resale, white-labeling, or selling derived products — you must obtain a
+   separate written commercial license from the copyright holder.
+
+   Contact: Rayomand Technology — via the repository owner's GitHub profile
+   (https://github.com/ssina-saint-Born).
+
+This document is a software license, not legal advice. If you need legal
+certainty for your jurisdiction, consult a qualified lawyer.
