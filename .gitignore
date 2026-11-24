@@ -1,0 +1,24 @@
+node_modules
+.next
+out
+data
+public/uploads
+public/frontends
+*.log
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+.env
+.env.*
+!.env.example
+.next-production
+.next-prod
+.next-pg
+.next-qa
+.next-build
+# Vendor reference server state (never commit signing keys or issued serials)
+vendor/data/
+
+# Docker build contexts / local data
+.data/
+dist/

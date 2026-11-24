@@ -1,0 +1,45 @@
+{
+  "name": "rayomand-cms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rayomand CMS bilingual publishing and commerce workspace with PostgreSQL and SMTP integration.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "tsx scripts/serve.ts",
+    "serve": "tsx scripts/serve.ts",
+    "db:setup": "node setup-database.mjs",
+    "test:woo": "node woo-smoke.mjs",
+    "test:seo": "node seo-smoke.mjs",
+    "test:sms": "node sms-smoke.mjs",
+    "test:access": "node scripts/access-smoke.mjs",
+    "test:access:checkout": "node scripts/access-checkout.mjs",
+    "test:access:otp": "node scripts/access-otp.mjs",
+    "mail": "tsx scripts/maild.ts",
+    "mail:tls": "tsx scripts/mail-tls.ts",
+    "theme:mint": "tsx vendor/scripts/mint-license.ts",
+    "vendor": "tsx vendor/server.ts",
+    "test:vendor": "tsx vendor/smoke.ts"
+  },
+  "dependencies": {
+    "@fontsource/vazirmatn": "^5.3.0",
+    "mailauth": "^8.1.0",
+    "mailparser": "^3.15.0",
+    "next": "14.2.15",
+    "pg": "^8.23.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "smtp-server": "^3.21.7"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/pg": "^8.23.1",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "autoprefixer": "10.4.20",
+    "postcss": "8.4.41",
+    "tailwindcss": "3.4.10",
+    "tsx": "^4.23.15",
+    "typescript": "5.4.5"
+  }
+}
