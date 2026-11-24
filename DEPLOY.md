@@ -162,7 +162,11 @@ Compose, because Coolify must add the Traefik labels for HTTPS.
    | `MAIL_SESSION_SECRET` | a second, separate `openssl rand -hex 32` |
 
    Generate both secrets with `openssl rand -hex 32` and never reuse one value
-   for the other. The database host is the Compose service name `postgres`.
+   for the other. The database host is the Compose service name `postgres`; the
+   bundled stack ignores any other host in the URL and still connects to its own
+   `postgres` service with the same credentials, so a Coolify-generated or
+   external hostname will not break the deployment. Use
+   `compose.external-db.yaml` to target an external database on purpose.
 6. Deploy. Open the generated HTTPS domain and paste `SETUP_TOKEN` to create the
    owner.
 

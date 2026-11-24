@@ -47,6 +47,9 @@ services:
       NODE_ENV: production
       PORT: 3131
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in Coolify}
+      # Written by postgres-init with the host rewritten to the internal
+      # `postgres` service; takes precedence over DATABASE_URL at runtime.
+      DATABASE_URL_FILE: /db-init/url
       SETUP_TOKEN: ${SETUP_TOKEN:?set SETUP_TOKEN in Coolify}
       MAIL_SESSION_SECRET: ${MAIL_SESSION_SECRET:?set MAIL_SESSION_SECRET in Coolify}
       MAIL_DATA_DIR: /app/data/mail
@@ -68,6 +71,7 @@ services:
       retries: 10
       start_period: 40s
     volumes:
+      - postgres-init:/db-init:ro
       - frontends:/app/public/frontends
       - uploads:/app/public/uploads
       - downloads:/app/public/downloads

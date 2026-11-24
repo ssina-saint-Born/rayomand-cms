@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { parseBundledDatabaseUrl, writeBundledDatabaseFiles } from "./postgres-url-init.mjs";
+import { parseBundledDatabaseUrl, writeBundledDatabaseFiles, bundledConnectionUrl } from "./postgres-url-init.mjs";
 
 function tempDir() {
     return fs.mkdtempSync(path.join(os.tmpdir(), "rayomand-deploy-"));
@@ -23,15 +23,31 @@ function envMap(text) {
 test("bundled URL parser decodes credentials and database names", () => {
     assert.deepEqual(
         parseBundledDatabaseUrl("postgresql://ray%20omand:p%40ss%3Aword%23@postgres:5432/rayo%20mand"),
-        { user: "ray omand", password: "p@ss:word#", database: "rayo mand" },
+        { user: "ray omand", password: "p@ss:word#", database: "rayo mand", host: "postgres", port: 5432 },
     );
 });
 
-test("bundled URL parser rejects external hosts, wrong schemes and unsafe names", () => {
-    assert.throws(() => parseBundledDatabaseUrl("postgresql://u:p@db.example.com:5432/app"), /host 'postgres'/);
+test("bundled URL parser rejects wrong schemes and unsafe names", () => {
     assert.throws(() => parseBundledDatabaseUrl("mysql://u:p@postgres:5432/app"), /must use postgresql/);
     assert.throws(() => parseBundledDatabaseUrl("postgresql://u:p@postgres:5432/"), /database name/);
     assert.throws(() => parseBundledDatabaseUrl("postgresql://u:p%0A@postgres:5432/app"), /line breaks/);
+    assert.throws(() => parseBundledDatabaseUrl("postgresql://u:p@postgres:0/app"), /invalid port/);
+});
+
+// Coolify may hand out a generated hostname for a database it created, so the
+// bundled stack must not reject it: it rewrites the connection to its own
+// internal `postgres` service and keeps only the credentials and database name.
+test("bundled URL parser keeps credentials but always targets the internal service", () => {
+    const parsed = parseBundledDatabaseUrl("postgresql://rayomand:secret@u207sgiseqosuuqfc49xwiem:5432/rayomand");
+    assert.equal(parsed.host, "u207sgiseqosuuqfc49xwiem");
+    assert.equal(
+        bundledConnectionUrl(parsed),
+        "postgresql://rayomand:secret@postgres:5432/rayomand",
+    );
+    assert.equal(
+        bundledConnectionUrl("postgresql://rayomand:secret@db.example.com/rayomand"),
+        "postgresql://rayomand:secret@postgres:5432/rayomand",
+    );
 });
 
 test("bundled URL parser writes the three official-postgres files", () => {
@@ -40,6 +56,7 @@ test("bundled URL parser writes the three official-postgres files", () => {
     assert.equal(fs.readFileSync(path.join(dir, "user"), "utf8"), "rayomand");
     assert.equal(fs.readFileSync(path.join(dir, "password"), "utf8"), "secret");
     assert.equal(fs.readFileSync(path.join(dir, "database"), "utf8"), "rayomand");
+    assert.equal(fs.readFileSync(path.join(dir, "url"), "utf8"), "postgresql://rayomand:secret@postgres:5432/rayomand");
 });
 
 function runConfigure(dir, args = []) {
@@ -150,6 +167,8 @@ for (const file of ["compose.yaml", "compose.coolify.yaml"]) {
         assert.deepEqual(binds, [], `${file} must not use host-relative bind mounts: ${binds.join(", ")}`);
         assert.match(text, /dockerfile:\s*Dockerfile\.init/, `${file} must build postgres-init from Dockerfile.init`);
         assert.match(text, /DB_INIT_DIR:\s*\/db-init/, `${file} must pass DB_INIT_DIR`);
+        assert.match(text, /DATABASE_URL_FILE:\s*\/db-init\/url/, `${file} must let the app read the rewritten URL`);
+        assert.match(text, /postgres-init:\/db-init:ro/, `${file} must mount the init volume into the app`);
     });
 }
 

@@ -9,10 +9,21 @@ export async function setOption(name: string, value: string | number): Promise<v
     (await getDb().execute("INSERT INTO options (name,value) VALUES ($1,$2) ON CONFLICT (name) DO UPDATE SET value=EXCLUDED.value", name, String(value)));
 }
 export async function getAllOptions(): Promise<Record<string, string>> {
-    const rows = (await getDb().many("SELECT name,value FROM options")) as {
-        name: string;
-        value: string;
-    }[];
+    let rows: { name: string; value: string }[];
+    try {
+        rows = (await getDb().many("SELECT name,value FROM options")) as {
+            name: string;
+            value: string;
+        }[];
+    }
+    catch (error) {
+        // `next build` collects page metadata before the database container
+        // exists in Docker/Coolify. Only in that phase fall back to defaults;
+        // at runtime a database failure must still surface.
+        if (process.env.NEXT_PHASE !== "phase-production-build")
+            throw error;
+        return {};
+    }
     const out: Record<string, string> = {};
     for (const r of rows)
         out[r.name] = r.value;

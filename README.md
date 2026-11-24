@@ -109,7 +109,11 @@ Coolify then adds the Traefik labels that terminate HTTPS.
    | `MAIL_SESSION_SECRET` | a different `openssl rand -hex 32` |
 
    The database host is the Compose service name `postgres`. Generate each
-   secret separately and never reuse one value for another purpose.
+   secret separately and never reuse one value for another purpose. If you
+   paste a URL whose host is something else (a Coolify-generated name or an
+   external server), the bundled stack ignores the host and connects to its own
+   `postgres` service using the same username, password and database name; use
+   `compose.external-db.yaml` to target a truly external database.
 5. Deploy. The first build takes a few minutes.
 
 `compose.coolify.yaml` bundles PostgreSQL and publishes **no** host web or mail

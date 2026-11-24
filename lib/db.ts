@@ -1,5 +1,6 @@
 import { Pool, PoolClient, types } from "pg";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { readFileSync } from "node:fs";
 import { schema } from "./schema";
 import { MODELING_SCHEMA } from "./modeling/schema";
 types.setTypeParser(20, Number);
@@ -10,10 +11,29 @@ const state = globalThis as unknown as {
     nomaTransaction?: AsyncLocalStorage<PoolClient>;
 };
 const context = state.nomaTransaction ??= new AsyncLocalStorage<PoolClient>();
-function pool(): Pool {
-    if (!process.env.DATABASE_URL)
+
+// The bundled Docker stack writes the authoritative connection URL to a shared
+// volume after rewriting the host to the internal `postgres` service, so the
+// web process and the database agree even when the operator's DATABASE_URL
+// names a different host. The file wins when present; otherwise fall back.
+function connectionString(): string {
+    const file = process.env.DATABASE_URL_FILE;
+    if (file) {
+        try {
+            const text = readFileSync(file, "utf8").trim();
+            if (text)
+                return text;
+        }
+        catch { /* volume not mounted (bare metal); use the env var */ }
+    }
+    const value = process.env.DATABASE_URL;
+    if (!value)
         throw new Error("DATABASE_URL is required. Configure PostgreSQL before starting Rayomand CMS.");
-    return state.nomaPool ??= new Pool({ connectionString: process.env.DATABASE_URL, max: 10, connectionTimeoutMillis: 10000 });
+    return value;
+}
+
+function pool(): Pool {
+    return state.nomaPool ??= new Pool({ connectionString: connectionString(), max: 10, connectionTimeoutMillis: 10000 });
 }
 async function initialize(): Promise<void> {
     if (!state.nomaMigration) {

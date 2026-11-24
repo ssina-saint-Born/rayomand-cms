@@ -10,14 +10,24 @@ import "@fontsource/vazirmatn/700.css";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const settings = await getSettings();
-  const origin = await getSiteUrl();
-  const title = settings.site_title || SITE_NAME_FALLBACK;
-  const description = settings.tagline || "Rayomand CMS — publishing, commerce and digital collections.";
-  const ogImage = settings.default_og_image ? new URL(settings.default_og_image, origin || "http://localhost").toString() : undefined;
+  // Metadata is generated at build time too, when the database may not be
+  // reachable yet (Docker/Coolify build precedes the database container). Fall
+  // back to defaults instead of failing the build with ENOTFOUND.
+  let settings: Awaited<ReturnType<typeof getSettings>> | null = null;
+  try {
+    settings = await getSettings();
+  } catch (error) {
+    if (process.env.NEXT_PHASE !== "phase-production-build")
+      throw error;
+    settings = null;
+  }
+  const origin = await getSiteUrl().catch(() => "");
+  const title = settings?.site_title || SITE_NAME_FALLBACK;
+  const description = settings?.tagline || "Rayomand CMS — publishing, commerce and digital collections.";
+  const ogImage = settings?.default_og_image ? new URL(settings.default_og_image, origin || "http://localhost").toString() : undefined;
   return {
     metadataBase: origin ? new URL(origin) : undefined,
-    title: { default: title, template: `%s ${settings.seo_title_separator} ${title}` },
+    title: { default: title, template: `%s ${settings?.seo_title_separator || "|"} ${title}` },
     description,
     applicationName: title,
     icons: {
@@ -37,14 +47,14 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: {
       card: ogImage ? "summary_large_image" : "summary",
-      site: settings.twitter_site || undefined,
+      site: settings?.twitter_site || undefined,
       title,
       description,
       images: ogImage ? [ogImage] : undefined,
     },
     verification: {
-      google: settings.search_verification_google || undefined,
-      other: settings.search_verification_bing
+      google: settings?.search_verification_google || undefined,
+      other: settings?.search_verification_bing
         ? { "msvalidate.01": settings.search_verification_bing }
         : undefined,
     },
