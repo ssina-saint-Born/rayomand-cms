@@ -23,26 +23,31 @@ function buildId(): string {
 
 export async function GET() { return ok({ required: await countUsers() === 0, build: buildId(), guard: GUARD_VERSION }); }
 
-// CSRF guard for the bootstrap call. Only the hostname is compared, because
-// behind a TLS-terminating proxy (Coolify/Traefik, nginx) Next.js sees the
-// internal `http://…:3131` request while the browser sends
-// `Origin: https://cms.example.com`; comparing full origins rejects every
-// legitimate setup request.
+// CSRF guard for the bootstrap call.
 //
-// Proxies differ in what they forward: Traefik normally passes the public host
-// in `X-Forwarded-Host`, but some configurations rewrite `Host` to the
-// container address and drop that header, leaving nothing that matches
-// `Origin` and locking the operator out of a fresh install. Coolify always
-// injects the public hostname into the container as an environment variable
-// (`COOLIFY_FQDN`, `SERVICE_FQDN_<name>`, `SERVICE_URL_<name>`), so those are
-// accepted as well. A request that matches none of them is still a cross-site
-// post and is rejected. Non-browser clients (curl, the Docker healthcheck) send
-// no Origin and pass.
+// Only hostnames are compared, because TLS terminates at the proxy: Next.js
+// sees the internal `http://…:3131` request while the browser sends
+// `Origin: https://cms.example.com`.
+//
+// The rule is "enforce the check whenever the request actually carries the
+// site's public hostname". Traefik normally supplies it in `X-Forwarded-Host`;
+// Coolify also injects it as `COOLIFY_FQDN` / `SERVICE_URL_*`. If any of those
+// yields a public DNS name, `Origin` must match it and a cross-site post is
+// rejected — that is the case that matters, since an attacker's page always
+// reaches us through the same proxy and therefore always carries those headers.
+//
+// When the proxy strips them all and only an internal address remains, an
+// origin comparison cannot tell a real browser from a forged post: both would
+// arrive with the same internal `Host` and nothing else. Rejecting there does
+// not add protection, it only locks the operator out of a fresh install. That
+// case falls back to SETUP_TOKEN, which the endpoint requires and which
+// browsers never attach on their own.
 const ENV_HOST_KEYS = /^(PUBLIC_ORIGIN|APP_URL|SITE_URL|COOLIFY_URL|COOLIFY_FQDN|SERVICE_FQDN_\w+|SERVICE_URL_\w+)$/;
 
-// Bump when this logic changes; GET reports it so a stale container (the usual
-// cause of "the fix didn't work") is distinguishable from an unfixed bug.
-const GUARD_VERSION = 2;
+// Bump when this logic changes; GET reports it, and serve.ts logs it at
+// startup, so a stale container (the usual cause of "the fix didn't work") is
+// obvious instead of indistinguishable from an unfixed bug.
+const GUARD_VERSION = 3;
 
 function hostOf(value: string): string {
   const text = value.trim();
@@ -55,7 +60,17 @@ function hostOf(value: string): string {
   }
 }
 
-function candidateHosts(req: Request): string[] {
+// A public hostname, as opposed to the container address a proxy rewrites Host
+// to: a dotted DNS name that is not loopback and not an IP literal.
+function isPublicHost(host: string): boolean {
+  if (!host || !host.includes("."))
+    return false;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal"))
+    return false;
+  return !/^\d{1,3}(\.\d{1,3}){3}$/.test(host) && !host.includes(":");
+}
+
+function publicHosts(req: Request): string[] {
   const values = [
     (req.headers.get("x-forwarded-host") || "").split(",")[0],
     req.headers.get("x-forwarded-server") || "",
@@ -65,7 +80,8 @@ function candidateHosts(req: Request): string[] {
   for (const [key, value] of Object.entries(process.env))
     if (value && ENV_HOST_KEYS.test(key))
       values.push(...value.split(","));
-  return values.map(hostOf).filter(Boolean);
+  const hosts = values.map(hostOf).filter(isPublicHost);
+  return [...new Set(hosts)];
 }
 
 function sameOrigin(req: Request): boolean {
@@ -75,10 +91,14 @@ function sameOrigin(req: Request): boolean {
   const originHost = hostOf(origin);
   if (!originHost)
     return false;
-  const candidates = candidateHosts(req);
-  if (candidates.includes(originHost))
+  const known = publicHosts(req);
+  if (!known.length) {
+    console.warn(`[setup] no public host in the request (host="${req.headers.get("host") || "-"}"); origin "${originHost}" left to SETUP_TOKEN`);
     return true;
-  console.warn(`[setup] origin rejected: origin="${originHost}" host="${req.headers.get("host") || "-"}" candidates=${JSON.stringify(candidates)}`);
+  }
+  if (known.includes(originHost))
+    return true;
+  console.warn(`[setup] origin rejected: origin="${originHost}" public=${JSON.stringify(known)} host="${req.headers.get("host") || "-"}"`);
   return false;
 }
 

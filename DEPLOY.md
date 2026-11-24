@@ -199,29 +199,36 @@ server".
 
 ### If owner creation says "Invalid origin"
 
-The setup endpoint rejects a bootstrap request whose `Origin` host does not
-match the request's own host; that check is what stops a cross-site post. Behind
-a proxy the host has to be rediscovered, because TLS terminates at Traefik and
-`Host` may be rewritten to the container address. The endpoint accepts the host
-from, in order: `X-Forwarded-Host`, `X-Forwarded-Server`, `Host`, the request
-URL, then `PUBLIC_ORIGIN`, `APP_URL`, `SITE_URL`, `COOLIFY_URL`,
-`COOLIFY_FQDN`, `SERVICE_FQDN_*` and `SERVICE_URL_*`.
+The setup endpoint refuses a bootstrap request whose `Origin` host is not the
+site's own host. That check only runs when the request actually carries the
+public hostname — from `X-Forwarded-Host`, `X-Forwarded-Server`, a public
+`Host`, or `PUBLIC_ORIGIN` / `APP_URL` / `SITE_URL` / `COOLIFY_URL` /
+`COOLIFY_FQDN` / `SERVICE_FQDN_*` / `SERVICE_URL_*`. Coolify sets
+`COOLIFY_FQDN`/`SERVICE_URL_<service>` itself, so normally nothing needs
+configuring.
 
-Coolify sets `COOLIFY_FQDN`/`SERVICE_URL_<service>` itself, so normally nothing
-needs to be configured. If the error persists, set `PUBLIC_ORIGIN` to the exact
-public address (scheme included, e.g. `https://cms.example.com`), redeploy, and
-retry. The server log names the rejected origin and the hosts it compared:
+If a proxy strips all of those and leaves only the internal container address,
+there is nothing meaningful to compare against: a forged post and a real
+browser would arrive identically. The endpoint then falls back to `SETUP_TOKEN`,
+which it requires anyway. The container log says which path was taken:
 
 ```
-[setup] origin rejected: origin="cms.example.com" host="10.0.1.7:3131" candidates=[…]
+[setup] no public host in the request (host="10.0.1.7:3131"); origin "cms.example.com" left to SETUP_TOKEN
+[setup] origin rejected: origin="evil.example" public=["cms.example.com"] host="10.0.1.7:3131"
 ```
 
-An `X-Forwarded-Proto: http` while the browser is on `https` is harmless: the
-guard compares hostnames only, never schemes.
+The first line is benign and the request proceeds. The second means a real
+mismatch was refused; make the public host resolve to your domain — setting
+`PUBLIC_ORIGIN` to the exact address (`https://cms.example.com`) is the direct
+fix.
 
-To confirm which build a container is running, `GET /api/auth/setup` returns
-`{"required":…,"build":"…","guard":…}`. If `guard` is lower than the number in
-this repository, the container is stale and needs a redeploy.
+Schemes are never compared, so `X-Forwarded-Proto: http` on an `https` page is
+harmless.
+
+To confirm which build a container runs, `GET /api/auth/setup` returns
+`{"required":…,"build":"…","guard":…}`, and the first line of the container log
+prints `[serve] build <id>`. If `guard` is lower than the value in this
+repository, the container is stale and needs a redeploy.
 
 
 ### Automatic deploys

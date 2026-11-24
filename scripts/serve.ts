@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { connect, createServer as createTcpServer, type Socket } from "node:net";
+import { join } from "node:path";
 import { loadEnv } from "../lib/env";
 import { startMailDaemon, type DaemonHandle } from "../lib/mail/engine/daemon";
 
@@ -37,6 +39,15 @@ function startAliasListener(): void {
     server.listen(ALIAS_PORT, "0.0.0.0", () => console.log(`[serve] also accepting on :${ALIAS_PORT} -> :${PORT}`));
 }
 
+function buildId(): string {
+    try {
+        return readFileSync(join(process.cwd(), ".next", "BUILD_ID"), "utf8").trim();
+    }
+    catch {
+        return "unknown";
+    }
+}
+
 function runNext(): ChildProcess {
     const child = spawn(
         process.execPath,
@@ -47,6 +58,9 @@ function runNext(): ChildProcess {
 }
 
 async function main(): Promise<void> {
+    // Printed on the first lines of the container log so an operator can tell
+    // at a glance whether a deploy actually replaced the running bundle.
+    console.log(`[serve] build ${buildId()}`);
     const web = runNext();
     startAliasListener();
     let mail: DaemonHandle | null = null;

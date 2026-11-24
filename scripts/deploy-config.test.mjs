@@ -202,17 +202,30 @@ test("serve.ts starts the port alias listener", () => {
 // Behind a TLS-terminating proxy Next.js sees http:// on req.url while the
 // browser sends Origin: https://…, so the setup endpoint must compare
 // hostnames, not full origins, or every first-owner creation returns 403
-// "Invalid origin". The check must stay a hard rejection (it is the CSRF
-// guard); what widens is the set of trustworthy host sources.
-test("setup origin guard compares hostnames and consults Coolify env vars", () => {
+// "Invalid origin".
+//
+// The comparison is enforced only when the request actually carries a public
+// hostname (X-Forwarded-Host or Coolify's injected COOLIFY_FQDN/SERVICE_URL_*).
+// If the proxy strips them all, an internal container address cannot
+// distinguish a browser from a forged post, so rejecting there only locks the
+// operator out; SETUP_TOKEN remains the gate in that case.
+test("setup origin guard compares hostnames and keeps a hard rejection", () => {
     const text = fs.readFileSync(path.join(import.meta.dirname, "..", "app", "api", "auth", "setup", "route.ts"), "utf8");
     assert.doesNotMatch(text, /new URL\(req\.url\)\.origin\s*\)/, "must not compare full origins");
-    assert.match(text, /hostname/, "must compare hostnames");
-    assert.match(text, /x-forwarded-host/, "must consider the proxy's forwarded host");
     assert.match(text, /if \(!origin\)\s*\n\s*return true;/, "non-browser clients without Origin must pass");
     assert.match(text, /if \(!sameOrigin\(req\)\) return fail\("Invalid origin", 403\);/, "a mismatch must still be rejected");
+    assert.match(text, /if \(known\.includes\(originHost\)\)/, "a matching public host must pass");
+    assert.match(text, /publicHosts\(req\)/, "must derive the public host set from the proxy");
     assert.match(text, /COOLIFY_FQDN/, "must accept Coolify's injected public hostname");
     assert.match(text, /SERVICE_URL_\\w\+/, "must accept the per-service public URL");
+    assert.match(text, /isPublicHost/, "an internal container address must not count as a public host");
+    assert.match(text, /if \(!known\.length\)/, "with no public host the token decides");
     assert.match(text, /guard: GUARD_VERSION/, "GET must report the guard version");
+});
+
+test("serve.ts logs the build id for stale-container detection", () => {
+    const text = fs.readFileSync(path.join(import.meta.dirname, "..", "scripts", "serve.ts"), "utf8");
+    assert.match(text, /BUILD_ID/, "must read the build id");
+    assert.match(text, /\[serve\] build/, "must print it in the container log");
 });
 
