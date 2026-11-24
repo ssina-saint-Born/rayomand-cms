@@ -7,38 +7,11 @@
 # For an existing database, use compose.external-db.yaml instead. In Coolify,
 # use compose.coolify.yaml so Traefik routes HTTPS without publishing a second
 # web port or colliding with mail ports owned by another service.
+#
+# `app` is listed first so tools that attach a domain to the first service pick
+# the long-running web container rather than the one-shot postgres-init.
 
 services:
-  postgres-init:
-    build:
-      context: .
-      dockerfile: Dockerfile.init
-    restart: "no"
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
-      DB_INIT_DIR: /db-init
-    volumes:
-      - postgres-init:/db-init
-
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    depends_on:
-      postgres-init:
-        condition: service_completed_successfully
-    environment:
-      POSTGRES_USER_FILE: /db-init/user
-      POSTGRES_PASSWORD_FILE: /db-init/password
-      POSTGRES_DB_FILE: /db-init/database
-    volumes:
-      - postgres-init:/db-init:ro
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /db-init/user)\" -d \"$$(cat /db-init/database)\""]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   app:
     build: .
     restart: unless-stopped
@@ -48,6 +21,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3131
+      # Also accept traffic on 80 for proxies that assume the container port is
+      # 80 when a domain does not name one.
+      WEB_ALIAS_PORT: 80
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
       # Written by postgres-init with the host rewritten to the internal
       # `postgres` service; takes precedence over DATABASE_URL at runtime.
@@ -85,6 +61,36 @@ services:
       - uploads:/app/public/uploads
       - downloads:/app/public/downloads
       - appdata:/app/data
+
+  postgres-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.init
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      DB_INIT_DIR: /db-init
+    volumes:
+      - postgres-init:/db-init
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER_FILE: /db-init/user
+      POSTGRES_PASSWORD_FILE: /db-init/password
+      POSTGRES_DB_FILE: /db-init/database
+    volumes:
+      - postgres-init:/db-init:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$(cat /db-init/user)\" -d \"$$(cat /db-init/database)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres-init:

@@ -178,3 +178,24 @@ test("Dockerfile.init copies the bootstrap script and runs it", () => {
     assert.match(text, /ENTRYPOINT \["node", "\/app\/postgres-url-init\.mjs"\]/);
 });
 
+// Coolify attaches a domain to the first service when none is selected. If that
+// is the one-shot postgres-init, Traefik routes to a container that has already
+// exited: the browser sees a default self-signed certificate and "no available
+// server". `app` must stay first, and it must accept traffic on port 80 as well
+// because domains without an explicit port are proxied to 80.
+for (const file of ["compose.yaml", "compose.coolify.yaml"]) {
+    test(`${file} lists app first and accepts port 80`, () => {
+        const text = fs.readFileSync(path.join(import.meta.dirname, "..", file), "utf8");
+        const services = text.split(/^services:\s*$/m)[1]?.split(/^volumes:/m)[0] ?? "";
+        const firstService = /^ {2}([a-z0-9-]+):\s*$/m.exec(services)?.[1];
+        assert.equal(firstService, "app", `${file} must declare app before postgres-init`);
+        assert.match(text, /WEB_ALIAS_PORT:\s*80/, `${file} must enable the port 80 alias`);
+    });
+}
+
+test("serve.ts starts the port alias listener", () => {
+    const text = fs.readFileSync(path.join(import.meta.dirname, "..", "scripts", "serve.ts"), "utf8");
+    assert.match(text, /WEB_ALIAS_PORT/);
+    assert.match(text, /startAliasListener\(\);/);
+});
+

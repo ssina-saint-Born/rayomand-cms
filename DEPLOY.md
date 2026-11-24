@@ -152,7 +152,12 @@ Compose, because Coolify must add the Traefik labels for HTTPS.
    `https://github.com/ssina-saint-Born/rayomand-cms`).
 2. **Base Directory:** `/`
 3. **Compose location:** `/compose.coolify.yaml`
-4. **Domain** on service `app`, container port `3131`.
+4. **Domain** — set it on service `app` and include the internal port:
+   `https://cms.example.com:3131`. Coolify's Compose path assumes port 80 when
+   the domain has no port, which routes to nothing and shows a self-signed
+   certificate plus "no available server". The app also listens on port 80 as a
+   fallback (`WEB_ALIAS_PORT`), so `https://cms.example.com` works too, but
+   naming `:3131` is the unambiguous choice.
 5. Environment variables — only these three are required:
 
    | Variable | Value |
@@ -175,6 +180,23 @@ ports; Traefik reaches `app:3131` over the internal network, so HTTPS is handled
 at the proxy. Named volumes (`pgdata`, `frontends`, `uploads`, `downloads`,
 `appdata`) persist database, frontend, upload, download and mail/app data across
 redeploys.
+
+`app` is the first service in the file on purpose: Coolify attaches a domain to
+the first service when none is selected, and the one-shot `postgres-init` exits
+immediately, which would produce a self-signed certificate and "no available
+server".
+
+### If the domain shows "no available server" or an untrusted certificate
+
+1. Open the resource → **Domains** and confirm the domain is on service `app`
+   with port `3131` (`https://host:3131`).
+2. Confirm the certificate in the browser is issued to your hostname, not
+   `TRAEFIK DEFAULT CERT`. A self-signed default certificate means Traefik has no
+   router for that host yet.
+3. Server → Proxy → **Restart Proxy** after changing domains or the Compose file.
+4. For Cloudflare, keep SSL/TLS mode on **Full (strict)**. "Flexible" makes
+   Cloudflare talk HTTP to port 443 and is a common cause of this error.
+
 
 ### Automatic deploys
 

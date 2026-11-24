@@ -50,7 +50,7 @@ RUN mkdir -p public/frontends public/uploads public/downloads /app/data/mail \
     && chown -R rayomand:rayomand public/frontends public/uploads public/downloads /app/data
 
 USER rayomand
-EXPOSE 3131 25 587 465 143 993 110 995
+EXPOSE 3131 80 25 587 465 143 993 110 995
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["npx", "tsx", "scripts/serve.ts"]
