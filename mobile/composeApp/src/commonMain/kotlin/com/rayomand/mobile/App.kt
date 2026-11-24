@@ -28,18 +28,28 @@ import com.rayomand.mobile.shared.*
 @Composable
 fun RayomandApp2(vm: AppViewModel) {
     val state by vm.state.collectAsState()
+    var showInstall by remember { mutableStateOf(false) }
     MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF1F2937))) {
-        if (!state.signedIn) {
-            SignInScreen(state, onSetUrl = vm::setBaseUrl, onSignIn = vm::signIn)
-        }
-        else {
-            HomeScreen(state, onRefresh = vm::refresh, onMarkRead = vm::markRead, onModerate = vm::moderate, onSignOut = vm::signOut)
+        when {
+            showInstall -> InstallScreen(onBack = { showInstall = false })
+            !state.signedIn -> SignInScreen(
+                state,
+                onSetUrl = vm::setBaseUrl,
+                onSignIn = vm::signIn,
+                onInstall = { showInstall = true },
+            )
+            else -> HomeScreen(state, onRefresh = vm::refresh, onMarkRead = vm::markRead, onModerate = vm::moderate, onSignOut = vm::signOut)
         }
     }
 }
 
 @Composable
-private fun SignInScreen(state: UiState, onSetUrl: (String) -> Unit, onSignIn: (String, String, String) -> Unit) {
+private fun SignInScreen(
+    state: UiState,
+    onSetUrl: (String) -> Unit,
+    onSignIn: (String, String, String) -> Unit,
+    onInstall: () -> Unit,
+) {
     var server by remember { mutableStateOf(state.baseUrl) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -65,12 +75,21 @@ private fun SignInScreen(state: UiState, onSetUrl: (String) -> Unit, onSignIn: (
 
         Spacer(Modifier.height(20.dp))
         Button(
-            onClick = { onSignIn(username, password, "1.0.0") },
+            onClick = { onSignIn(username, password, ProjectInfo.APP_VERSION) },
             enabled = !state.loading && username.isNotBlank() && password.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (state.loading) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
             else Text("Sign in")
+        }
+
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(12.dp))
+        TextButton(onClick = onInstall, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.Dns, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Install the CMS on your server")
         }
     }
 }

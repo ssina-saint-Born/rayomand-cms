@@ -128,7 +128,19 @@ The app talks to the CMS's `/api/mobile/*` endpoints with a bearer token. Source
 lives under [`mobile/`](mobile/). See [mobile/README.md](mobile/README.md) for
 full details.
 
-**Build requirements:** JDK 17, Android SDK (platform 35) for Android; macOS +
+**Download the Android app (no build needed):** grab the latest
+`rayomand-cms-*.apk` from the
+[**Releases**](https://github.com/ssina-saint-Born/rayomand-cms/releases) page and
+open it on your device (allow "install from unknown sources" when prompted).
+
+**Install the CMS from your phone:** on the sign-in screen tap **"Install the
+CMS on your server"**. The app asks for your server address, install directory,
+and web port, then produces the exact one-line command that clones this
+repository and runs the installer (Docker or bare metal) — copy it and run it
+over SSH. The app itself never opens the SSH connection, so no server
+credentials pass through the phone.
+
+**Build it yourself:** JDK 17 and Android SDK (platform 35) for Android; macOS +
 Xcode 15+ for iOS.
 
 ```bash
@@ -138,6 +150,11 @@ cd mobile
 
 adb install -r composeApp/build/outputs/apk/debug/composeApp-debug.apk
 ```
+
+> The prebuilt Release APK is signed with the standard Android debug key. That
+> is fine for sideloading and testing; for a Play Store release, sign it with
+> your own keystore (`./gradlew :composeApp:assembleRelease` with a signing
+> config).
 
 On an emulator the CMS is reached at `http://10.0.2.2:3131` (the default server
 address). On a physical device, set the server address to your LAN IP or domain
@@ -149,6 +166,8 @@ cd mobile
 ```
 
 Then create an Xcode app that uses `MainViewController()` from `ComposeApp`.
+iOS builds require Apple signing and cannot be distributed as a plain file, so
+no prebuilt iOS binary is provided — build it on a Mac for the App Store.
 
 ### Updating
 
@@ -317,6 +336,16 @@ sudo journalctl -u rayomand -f     # مشاهدهٔ لاگ‌ها
 **پیش‌نیاز ساخت:** JDK 17 و Android SDK (پلتفرم ۳۵) برای اندروید؛ macOS و
 Xcode 15 به بالا برای iOS.
 
+**دانلود اپ اندروید (بدون نیاز به ساخت):** آخرین فایل `rayomand-cms-*.apk` را از
+صفحهٔ [**Releases**](https://github.com/ssina-saint-Born/rayomand-cms/releases)
+بگیرید و روی دستگاه باز کنید (هنگام نصب، اجازهٔ «نصب از منابع ناشناس» را بدهید).
+
+**نصب CMS از روی گوشی:** در صفحهٔ ورود روی **«Install the CMS on your server»**
+بزنید. اپ آدرس سرور، مسیر نصب و پورت وب را می‌پرسد و سپس همان دستور یک‌خطی را
+می‌سازد که این مخزن را clone کرده و نصب‌کننده را اجرا می‌کند (Docker یا نصب
+مستقیم) — دستور را کپی کنید و با SSH اجرا کنید. خود اپ هرگز اتصال SSH باز نمی‌کند،
+پس هیچ رمز سروری از گوشی عبور نمی‌کند.
+
 ```bash
 cd mobile
 ./gradlew :composeApp:assembleDebug
@@ -324,6 +353,10 @@ cd mobile
 
 adb install -r composeApp/build/outputs/apk/debug/composeApp-debug.apk
 ```
+
+> فایل APK آمادهٔ Releases با کلید دیباگ استاندارد اندروید امضا شده است. برای نصب
+> دستی و تست مناسب است؛ برای انتشار در Google Play آن را با کلید خودتان امضا کنید
+> (`./gradlew :composeApp:assembleRelease` همراه با تنظیمات امضا).
 
 روی شبیه‌ساز، CMS از آدرس `http://10.0.2.2:3131` در دسترس است (آدرس پیش‌فرض در
 صفحهٔ ورود). روی دستگاه واقعی، آدرس سرور را در صفحهٔ ورود به IP محلی یا دامنهٔ
@@ -335,7 +368,8 @@ cd mobile
 ```
 
 سپس یک اپ Xcode بسازید که از `MainViewController()` متعلق به `ComposeApp`
-استفاده کند.
+استفاده کند. ساخت iOS نیاز به امضای اپل دارد و فایل خام قابل توزیع نیست، بنابراین
+هیچ باینری آمادهٔ iOS ارائه نمی‌شود — آن را روی مک برای App Store بسازید.
 
 ### به‌روزرسانی
 

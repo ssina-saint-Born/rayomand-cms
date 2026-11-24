@@ -8,6 +8,13 @@ which are implemented and tested in the CMS. Shared networking, models, and
 screen state live in `:shared`; the Compose UI in `:composeApp` runs on both
 platforms.
 
+It also ships a **server-install helper**: from the sign-in screen, "Install the
+CMS on your server" builds the exact command that clones the official repository
+and runs the installer over SSH (Docker or bare metal). The repository URL lives
+in [`ProjectInfo.kt`](shared/src/commonMain/kotlin/com/rayomand/mobile/shared/ProjectInfo.kt).
+
+Prebuilt Android APKs are published on the repository's **Releases** page.
+
 ---
 
 ## Layout
