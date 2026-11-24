@@ -199,3 +199,15 @@ test("serve.ts starts the port alias listener", () => {
     assert.match(text, /startAliasListener\(\);/);
 });
 
+// Behind a TLS-terminating proxy Next.js sees http:// on req.url while the
+// browser sends Origin: https://…, so the setup endpoint must compare
+// hostnames, not full origins, or every first-owner creation returns 403
+// "Invalid origin".
+test("setup origin guard compares hostnames, not schemes", () => {
+    const text = fs.readFileSync(path.join(import.meta.dirname, "..", "app", "api", "auth", "setup", "route.ts"), "utf8");
+    assert.doesNotMatch(text, /new URL\(req\.url\)\.origin\s*\)/, "must not compare full origins");
+    assert.match(text, /hostname/, "must compare hostnames");
+    assert.match(text, /x-forwarded-host/, "must consider the proxy's forwarded host");
+    assert.match(text, /if \(!origin\)\s*\n\s*return true;/, "non-browser clients without Origin must pass");
+});
+

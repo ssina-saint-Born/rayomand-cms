@@ -11,8 +11,37 @@ export const dynamic = "force-dynamic";
 
 export async function GET() { return ok({ required: await countUsers() === 0 }); }
 
+// CSRF guard for the bootstrap call. Only the hostname is compared, because
+// behind a TLS-terminating proxy (Coolify/Traefik, nginx) Next.js builds
+// req.url with `http://` while the browser sends `Origin: https://…`; comparing
+// full origins rejects every legitimate setup request. Hostname equality still
+// blocks cross-site posts, since an attacker page cannot claim our hostname.
+// Non-browser clients (curl, the Docker healthcheck) send no Origin and pass.
+function sameOrigin(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin)
+    return true;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const forwardedHost = (req.headers.get("x-forwarded-host") || "").split(",")[0].trim();
+  const candidates = [forwardedHost, req.headers.get("host") || "", new URL(req.url).host]
+    .filter(Boolean)
+    .map((value) => {
+      try {
+        return new URL(`http://${value}`).hostname.toLowerCase();
+      } catch {
+        return "";
+      }
+    });
+  return candidates.includes(originHost);
+}
+
 export async function POST(req: Request) {
-  if (req.headers.get("origin") && req.headers.get("origin") !== new URL(req.url).origin) return fail("Invalid origin", 403);
+  if (!sameOrigin(req)) return fail("Invalid origin", 403);
   const body = await readBody(req);
   const secret = process.env.SETUP_TOKEN;
   const hash = (s: string) => createHash("sha256").update(s).digest();
